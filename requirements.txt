@@ -1,0 +1,4 @@
+cloudinary
+pydantic-settings
+pytest
+pytest-mock
