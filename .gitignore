@@ -1,6 +1,5 @@
 # Environment
 .env
-.env.*
 myenv
 # Python
 __pycache__/
@@ -22,3 +21,5 @@ storage/
 .DS_Store
 .vscode/
 .idea/
+
+all_models.txt
