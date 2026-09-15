@@ -1,4 +1,53 @@
-cloudinary
-pydantic-settings
-pytest
-pytest-mock
+# --- Web framework -----------------------------------------------------------
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+gunicorn==23.0.0
+
+# --- Config & validation -------------------------------------------------------
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# --- Database --------------------------------------------------------------------
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0          # async Postgres driver (app runtime)
+psycopg2-binary==2.9.10  # sync driver (Alembic migrations)
+alembic==1.14.0
+
+# --- Background processing ----------------------------------------------------
+celery==5.4.0
+redis==5.2.1
+
+# --- Document extraction & OCR --------------------------------------------------
+pymupdf==1.25.1          # PDF extraction
+python-docx==1.1.2       # DOCX extraction
+pytesseract==0.3.13      # Tesseract OCR wrapper
+pillow==11.0.0
+
+# --- LLM integration -------------------------------------------------------------
+groq==0.13.1
+
+# --- Storage ----------------------------------------------------------------------
+cloudinary==1.41.0
+
+# --- Auth / security ---------------------------------------------------------------
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.20   # required for file upload endpoints
+
+# --- Utilities ----------------------------------------------------------------------
+httpx==0.28.1
+tenacity==9.0.0            # retry logic for LLM/OCR calls
+python-dotenv==1.0.1
+orjson==3.10.12
+
+# --- Testing --------------------------------------------------------------------------
+pytest==8.3.4
+pytest-asyncio==0.25.0
+pytest-cov==6.0.0
+faker==33.1.0
+pytest-mock==3.14.0
+
+# --- Dev tooling ------------------------------------------------------------------------
+ruff==0.8.4                # lint + format
+mypy==1.14.0
+pre-commit==4.0.1

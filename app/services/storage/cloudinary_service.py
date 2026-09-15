@@ -1,23 +1,21 @@
 from __future__ import annotations
-from datetime import datetime,timezone
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 import cloudinary
 import cloudinary.uploader
 import cloudinary.utils
 from cloudinary.exceptions import Error as CloudinaryError
-
 from app.core.config import settings
 from .schemas import (
-    UploadResult,
-    MoveResult,
     DeleteResult,
+    MoveResult,
     StorageStage,
+    UploadResult,
 )
 
 class StorageConfigurationError(RuntimeError):
     """Raised when required Cloudinary configuration is missing."""
-
 
 class StorageUploadError(RuntimeError):
     """Raised when a file cannot be uploaded to Cloudinary."""
@@ -29,43 +27,63 @@ class StorageMoveError(RuntimeError):
     """Raised when a file cannot be moved between Cloudinary stages."""
 
 class InvalidLifecycleTransition(StorageMoveError):
-    """Raised when a lifecycle transition is not allowed."""   
+    """Raised when a lifecycle transition is not allowed."""
 
 class StorageDeleteError(RuntimeError):
-    """Raised when a file cannot be deleted from Cloudinary."""     
-
+    """Raised when a file cannot be deleted from Cloudinary."""
 
 class CloudinaryStorageService:
-    _DELIVERY_TYPE = "private"
-    # _DELIVERY_TYPE = "upload"
+    """
+    Cloudinary-based document storage service.
 
-    _ALLOWED_TRANSITIONS: dict[StorageStage, set[StorageStage]] ={
-        StorageStage.TEMP:{
+    The service does not depend on local filesystem paths.
+
+    Files are received as file-like objects, for example:
+
+        UploadFile.file
+
+    Lifecycle:
+
+        TEMP
+          ├── PERMANENT
+          ├── QUARANTINE
+          └── REVIEW
+    """
+
+    _DELIVERY_TYPE = "private"
+
+    _ALLOWED_TRANSITIONS: dict[StorageStage, set[StorageStage]] = {
+        StorageStage.TEMP: {
             StorageStage.PERMANENT,
             StorageStage.QUARANTINE,
             StorageStage.REVIEW,
         },
-        StorageStage.PERMANENT:set(),
-        StorageStage.QUARANTINE:set(),
-        StorageStage.REVIEW:set(),
+        StorageStage.PERMANENT: set(),
+        StorageStage.QUARANTINE: set(),
+        StorageStage.REVIEW: set(),
     }
 
     def __init__(self) -> None:
         self._configure_cloudinary()
 
+
+
     @staticmethod
     def _configure_cloudinary() -> None:
         missing = [
-            name for name , value in {
+            name
+            for name, value in {
                 "CLOUDINARY_CLOUD_NAME": settings.cloudinary_cloud_name,
                 "CLOUDINARY_API_KEY": settings.cloudinary_api_key,
                 "CLOUDINARY_API_SECRET": settings.cloudinary_api_secret,
             }.items()
             if not value
         ]
+
         if missing:
-            raise  StorageConfigurationError(
-                f"Missing required Cloudinary configuration values: {', '.join(missing)}"
+            raise StorageConfigurationError(
+                "Missing required Cloudinary configuration values: "
+                f"{', '.join(missing)}"
             )
 
         cloudinary.config(
@@ -76,43 +94,57 @@ class CloudinaryStorageService:
         )
 
 
-    def upload(
-            self,
-            file_path: str|Path,
-            *,
-            public_id: str|None = None,
 
-    )    -> UploadResult:
-        path = Path(file_path)
-        if not path.is_file():
+    def upload(
+        self,
+        file: BinaryIO,
+        *,
+        filename: str,
+        public_id: str | None = None,
+    ) -> UploadResult:
+        """
+        Upload a file directly to Cloudinary.
+
+        `file` should be a file-like binary object such as
+        FastAPI's `UploadFile.file`.
+
+        The service does not read from or depend on a local file path.
+        """
+
+        if not filename or not filename.strip():
             raise StorageUploadError(
-                f"File not found: {path}"
+                "Filename is required for upload."
             )
 
-        resource_type = self._resource_type_for_file(path)
+        resource_type = self._resource_type_for_file(filename)
+
         folder = settings.cloudinary_temp_folder
+
         generated_public_id = self._build_public_id(
             folder=folder,
-            path = path,
-            resource_type=resource_type,
+            filename=filename,
             public_id=public_id,
         )
 
         try:
-            result : dict[str, Any] = cloudinary.uploader.upload(
-                str(path),
+            result: dict[str, Any] = cloudinary.uploader.upload(
+                file,
                 public_id=generated_public_id,
                 resource_type=resource_type,
                 type=self._DELIVERY_TYPE,
             )
+
         except CloudinaryError as exc:
             raise StorageUploadError(
-                f"Cloudinary upload failed for file {path}: {exc}"
-            )from exc
+                f"Cloudinary upload failed for file {filename}: {exc}"
+            ) from exc
+
         except Exception as exc:
             raise StorageUploadError(
-                f"Unexpected error during Cloudinary upload for file {path}: {exc}"
-            )from exc 
+                "Unexpected error during Cloudinary upload "
+                f"for file {filename}: {exc}"
+            ) from exc
+
         return UploadResult(
             public_id=result["public_id"],
             resource_type=result["resource_type"],
@@ -123,9 +155,17 @@ class CloudinaryStorageService:
         )
 
 
+
     @staticmethod
-    def _resource_type_for_file(path: Path) -> str:
-        extension = path.suffix.lower()
+    def _resource_type_for_file(filename: str) -> str:
+        """
+        Determine Cloudinary resource type from the filename.
+
+        PDF/DOCX -> raw
+        JPG/JPEG/PNG -> image
+        """
+
+        extension = Path(filename).suffix.lower()
 
         if extension in {".pdf", ".docx"}:
             return "raw"
@@ -137,171 +177,217 @@ class CloudinaryStorageService:
             f"Unsupported document extension: '{extension}'"
         )
 
+
+
     @staticmethod
     def _build_public_id(
         *,
         folder: str,
-        path: Path,
-        resource_type: str,
-        public_id: str|None = None,
+        filename: str,
+        public_id: str | None = None,
     ) -> str:
+        """
+        Build the Cloudinary public ID.
+
+        The filename extension is intentionally not included in the
+        public ID. The actual file format is returned by Cloudinary
+        and should be retained by the caller when needed.
+        """
+
         if public_id:
             name = public_id.strip("/")
-        elif resource_type == "raw":
-            name = path.stem
         else:
-            name = path.stem
+            name = Path(filename).stem
 
         return f"{folder.strip('/')}/{name}"
 
+
+
     def generate_signed_url(
-            self,
-            public_id: str,
-            *,
-            resource_type: str,
-            expires_in: int = 300,
+        self,
+        public_id: str,
+        *,
+        resource_type: str,
+        file_format: str,
+        expires_in: int = 300,
     ) -> str:
-        """Generate a short-lived signed URL for a private asset."""
+        """
+        Generate a short-lived signed URL for a private Cloudinary asset.
+
+        `file_format` must be provided explicitly because the public ID
+        does not contain the file extension.
+        """
+
         if expires_in <= 0:
             raise StorageUrlGenerationError(
-                f"Invalid expires_in value: {expires_in}. Must be a positive integer."
+                f"Invalid expires_in value: {expires_in}. "
+                "Must be a positive integer."
             )
 
-        file_format = Path(public_id).suffix.lstrip(".")
-
-        if not file_format:
+        if not file_format or not file_format.strip():
             raise StorageUrlGenerationError(
-                f"Cannot determine file format from public_id: {public_id}"
+                "File format is required to generate a signed URL."
             )
 
-        expires_at = int(datetime.now(timezone.utc).timestamp()) + expires_in
+        file_format = file_format.lstrip(".")
+
+        expires_at = (
+            int(datetime.now(timezone.utc).timestamp())
+            + expires_in
+        )
+
         try:
             return cloudinary.utils.private_download_url(
                 public_id,
                 file_format,
                 resource_type=resource_type,
-                type = self._DELIVERY_TYPE,
+                type=self._DELIVERY_TYPE,
                 expires_at=expires_at,
             )
+
         except CloudinaryError as exc:
             raise StorageUrlGenerationError(
-                f"Failed to generate signed URL for public_id {public_id}: {exc}"
+                f"Failed to generate signed URL for "
+                f"public_id {public_id}: {exc}"
             ) from exc
+
         except Exception as exc:
             raise StorageUrlGenerationError(
-                f"Unexpected error during signed URL generation for public_id {public_id}: {exc}"
+                "Unexpected error during signed URL generation "
+                f"for public_id {public_id}: {exc}"
             ) from exc
+
 
 
     def move(
-            self,
-            public_id: str,
-            *,
-            resource_type: str, 
-            current_stage: StorageStage,
-            target_stage: StorageStage,
-        ) -> MoveResult:
-            """Move a document from one lifecycle stage to another."""
-            allowed_targets = self._ALLOWED_TRANSITIONS.get(current_stage, set())
+        self,
+        public_id: str,
+        *,
+        resource_type: str,
+        current_stage: StorageStage,
+        target_stage: StorageStage,
+    ) -> MoveResult:
+        """
+        Move a document from one lifecycle stage to another.
+        """
 
-            if target_stage not in allowed_targets:
-                raise InvalidLifecycleTransition(
-                    f"Invalid transition from {current_stage} to {target_stage}. Allowed targets: {allowed_targets}"
-                    f"Current public_id: {public_id}, resource_type: {resource_type}"
-                )
+        allowed_targets = self._ALLOWED_TRANSITIONS.get(
+            current_stage,
+            set(),
+        )
 
-            source_folder = self._folder_for_stage(current_stage)
-            target_folder = self._folder_for_stage(target_stage)
-
-            file_name = Path(public_id).name
-            source_public_id = public_id
-
-            if not source_public_id.startswith(source_folder.rstrip("/") + "/"):
-                source_public_id = f"{source_folder.rstrip('/')}/{file_name}"
-
-            target_public_id = f"{target_folder.rstrip('/')}/{file_name}"
-
-            try:
-                result: dict[str, Any] = cloudinary.uploader.rename(
-                    source_public_id,
-                    target_public_id,
-                    resource_type=resource_type,
-                    type=self._DELIVERY_TYPE,
-                    # overwrite=True,
-                    overwrite = False,
-                )
-            except CloudinaryError as exc:
-                raise StorageMoveError(
-                    f"Failed to move {source_public_id} "
-                    f"to {target_public_id}: {exc}"
-                )
-            except Exception as exc:
-                raise StorageMoveError(
-                    f"Unexpected error during move from {source_public_id} "
-                    f"to {target_public_id}: {exc}"
-                ) from exc
-
-            return MoveResult(
-                old_public_id=source_public_id,
-                public_id=result["public_id"],
-                resource_type=result["resource_type"],
-                stage=target_stage,
+        if target_stage not in allowed_targets:
+            raise InvalidLifecycleTransition(
+                f"Invalid transition from {current_stage} "
+                f"to {target_stage}. "
+                f"Allowed targets: {allowed_targets}. "
+                f"Current public_id: {public_id}, "
+                f"resource_type: {resource_type}"
             )
 
-    @staticmethod
-    def _folder_for_stage(stage: StorageStage) -> str:
-     folders = {
-        StorageStage.TEMP: settings.cloudinary_temp_folder,
-        StorageStage.PERMANENT: settings.cloudinary_permanent_folder,
-        StorageStage.QUARANTINE: settings.cloudinary_quarantine_folder,
-        StorageStage.REVIEW: settings.cloudinary_review_folder,
-    }
+        source_folder = self._folder_for_stage(current_stage)
+        target_folder = self._folder_for_stage(target_stage)
 
-     try:
-        return folders[stage]
-     except KeyError as exc:
-        raise StorageMoveError(
-            f"Unsupported storage stage: {stage}"
-        ) from exc
+        file_name = Path(public_id).name
 
+        source_public_id = public_id
 
-    def delete(
-            self,
-            public_id: str,
-            *,
-            resource_type: str,
-    ) -> DeleteResult:
-        """Delete a document from Cloudinary."""
+        if not source_public_id.startswith(
+            source_folder.rstrip("/") + "/"
+        ):
+            source_public_id = (
+                f"{source_folder.rstrip('/')}/{file_name}"
+            )
+
+        target_public_id = (
+            f"{target_folder.rstrip('/')}/{file_name}"
+        )
+
         try:
-            result = cloudinary.uploader.destroy(
-              public_id,
-              resource_type=resource_type,
-              type=self._DELIVERY_TYPE,
+            result: dict[str, Any] = cloudinary.uploader.rename(
+                source_public_id,
+                target_public_id,
+                resource_type=resource_type,
+                type=self._DELIVERY_TYPE,
+                overwrite=False,
             )
+
         except CloudinaryError as exc:
-            raise StorageDeleteError(
-                f"failed  to delete{public_id}:{exc}"
-
-            )   from exc
-        except Exception as exc:
-            raise StorageDeleteError(
-                f"Unexpected error during the deletion of {public_id}: {exc}   "
-
+            raise StorageMoveError(
+                f"Failed to move {source_public_id} "
+                f"to {target_public_id}: {exc}"
             ) from exc
-        deleted = result.get("result") == "ok"
-        return DeleteResult(
-        public_id=public_id,
-        resource_type=resource_type,
-        deleted=deleted,
+
+        except Exception as exc:
+            raise StorageMoveError(
+                f"Unexpected error during move from "
+                f"{source_public_id} to {target_public_id}: {exc}"
+            ) from exc
+
+        return MoveResult(
+            old_public_id=source_public_id,
+            public_id=result["public_id"],
+            resource_type=result["resource_type"],
+            stage=target_stage,
         )
 
 
 
+    @staticmethod
+    def _folder_for_stage(stage: StorageStage) -> str:
+        folders = {
+            StorageStage.TEMP: settings.cloudinary_temp_folder,
+            StorageStage.PERMANENT: (
+                settings.cloudinary_permanent_folder
+            ),
+            StorageStage.QUARANTINE: (
+                settings.cloudinary_quarantine_folder
+            ),
+            StorageStage.REVIEW: settings.cloudinary_review_folder,
+        }
+
+        try:
+            return folders[stage]
+
+        except KeyError as exc:
+            raise StorageMoveError(
+                f"Unsupported storage stage: {stage}"
+            ) from exc
 
 
+    def delete(
+        self,
+        public_id: str,
+        *,
+        resource_type: str,
+    ) -> DeleteResult:
+        """
+        Delete a document from Cloudinary.
+        """
 
+        try:
+            result: dict[str, Any] = cloudinary.uploader.destroy(
+                public_id,
+                resource_type=resource_type,
+                type=self._DELIVERY_TYPE,
+            )
 
+        except CloudinaryError as exc:
+            raise StorageDeleteError(
+                f"Failed to delete {public_id}: {exc}"
+            ) from exc
 
-            
-            
+        except Exception as exc:
+            raise StorageDeleteError(
+                "Unexpected error during deletion of "
+                f"{public_id}: {exc}"
+            ) from exc
+
+        deleted = result.get("result") == "ok"
+
+        return DeleteResult(
+            public_id=public_id,
+            resource_type=resource_type,
+            deleted=deleted,
+        )
 
