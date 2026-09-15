@@ -1,0 +1,25 @@
+# Environment
+.env
+myenv
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Storage (local dev document files — never commit client documents)
+storage/
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+all_models.txt
