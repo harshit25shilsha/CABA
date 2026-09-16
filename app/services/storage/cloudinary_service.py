@@ -73,9 +73,9 @@ class CloudinaryStorageService:
         missing = [
             name
             for name, value in {
-                "CLOUDINARY_CLOUD_NAME": settings.cloudinary_cloud_name,
-                "CLOUDINARY_API_KEY": settings.cloudinary_api_key,
-                "CLOUDINARY_API_SECRET": settings.cloudinary_api_secret,
+                "CLOUDINARY_CLOUD_NAME": settings.CLOUDINARY_CLOUD_NAME,
+                "CLOUDINARY_API_KEY": settings.CLOUDINARY_API_KEY,
+                "CLOUDINARY_API_SECRET": settings.CLOUDINARY_API_SECRET
             }.items()
             if not value
         ]
@@ -87,9 +87,10 @@ class CloudinaryStorageService:
             )
 
         cloudinary.config(
-            cloud_name=settings.cloudinary_cloud_name,
-            api_key=settings.cloudinary_api_key,
-            api_secret=settings.cloudinary_api_secret,
+            cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+            api_key=settings.CLOUDINARY_API_KEY,
+            api_secret=settings.CLOUDINARY_API_SECRET,
+            
             secure=True,
         )
 
@@ -118,7 +119,7 @@ class CloudinaryStorageService:
 
         resource_type = self._resource_type_for_file(filename)
 
-        folder = settings.cloudinary_temp_folder
+        folder = settings.CLOUDINARY_TEMP_FOLDER
 
         generated_public_id = self._build_public_id(
             folder=folder,
@@ -338,12 +339,12 @@ class CloudinaryStorageService:
         folders = {
             StorageStage.TEMP: settings.cloudinary_temp_folder,
             StorageStage.PERMANENT: (
-                settings.cloudinary_permanent_folder
+                settings.CLOUDINARY_PERMANENT_FOLDER
             ),
             StorageStage.QUARANTINE: (
-                settings.cloudinary_quarantine_folder
+                settings.CLOUDINARY_QUARANTINE_FOLDER
             ),
-            StorageStage.REVIEW: settings.cloudinary_review_folder,
+            StorageStage.REVIEW: settings.CLOUDINARY_REVIEW_FOLDER
         }
 
         try:
