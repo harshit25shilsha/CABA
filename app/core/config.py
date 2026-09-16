@@ -165,11 +165,35 @@ class LLMSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
     GROQ_API_KEY: str
-    GROQ_MODEL: str = "openai/gpt-oss-120b"
-    GROQ_TIMEOUT_SECONDS: int = 30
-    GROQ_MAX_RETRIES: int = 3
-    LLM_TEMPERATURE: float = 0.1  # low temp — deterministic-leaning extraction
+    GROQ_MODEL: str
+    GROQ_TIMEOUT_SECONDS: int
+    GROQ_MAX_RETRIES: int
+    LLM_TEMPERATURE: float # low temp — deterministic-leaning extraction
 
+
+class VisionSettings(BaseSettings):
+    """
+    Vision/document model for EXTRACT_VISUAL — scanned docs, forms,
+    layouts, tables. Field names are provider-agnostic on purpose: the
+    processor uses an OpenAI-compatible client, so switching provider
+    later (Gemini -> Qwen -> a self-hosted vLLM endpoint, etc.) is a
+    .env change (VISION_BASE_URL/VISION_MODEL/VISION_API_KEY) plus
+    swapping which processor class factory.py registers for
+    EXTRACT_VISUAL — never a change to the AIBrain/router/AIProcessor
+    core.
+ 
+    Default provider: Google Gemini 2.5 Flash via its OpenAI-compatible
+    endpoint, on the free API tier for Phase 1 development.
+    """
+    
+    model_config = SettingsConfigDict(extra ="ignore")
+    
+    VISION_API_KEY: str = ""
+    VISION_MODEL: str
+    VISION_BASE_URL: str
+    VISION_TIMEOUT_SECONDS: int # vision calls run slower than text-only
+    VISION_MAX_RETRIES: int
+    
 
 class OCRSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
@@ -191,6 +215,7 @@ class Settings(
     SecuritySettings,
     StorageSettings,
     LLMSettings,
+    VisionSettings,
     OCRSettings,
 ):
     model_config = SettingsConfigDict(
