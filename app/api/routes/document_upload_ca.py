@@ -9,6 +9,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
     UploadFile,
     status,
 )
@@ -292,8 +293,9 @@ def parse_optional_uuid(
     response_model=DocumentUploadResponse,
 )
 async def create_ca_document_request(
+    request: Request,
     client_id: uuid.UUID = Form(...),
-    created_by_user_id: uuid.UUID = Form(...),
+    # created_by_user_id: uuid.UUID = Form(...),
     service_id: str | None = Form(None),
     sub_service_id: str | None = Form(None),
     description: str | None = Form(None),
@@ -310,12 +312,13 @@ async def create_ca_document_request(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="client_id is required.",
         )
+    created_by_user_id = request.state.user_id
 
-    if not created_by_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="created_by_user_id is required.",
-        )
+    # if not created_by_user_id:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_400_BAD_REQUEST,
+    #         detail="created_by_user_id is required.",
+    #     )
 
     service_uuid = parse_optional_uuid(service_id, "service_id")
     sub_service_uuid = parse_optional_uuid(
