@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -7,6 +8,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import UploadStatus
+
+if TYPE_CHECKING:
+    from app.models.ai_result import AIProcessingResult, ValidationResult
+    from app.models.document_request import RequestedDocument
+    from app.models.review import ReviewAction
 
 
 class DocumentUpload(Base, UUIDPrimaryKeyMixin, TimestampMixin):
