@@ -1,4 +1,5 @@
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -6,6 +7,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import ReviewDecision
+
+if TYPE_CHECKING:
+    from app.models.upload import DocumentUpload
 
 
 class ReviewAction(Base, UUIDPrimaryKeyMixin, TimestampMixin):
