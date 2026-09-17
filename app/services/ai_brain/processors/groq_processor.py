@@ -168,13 +168,27 @@ class GroqReasoningProcessor(AIProcessor):
 
         if self.task == ModelTask.VALIDATE_SEMANTIC:
             spec = context.extra.get("normalized_spec")
-            fields = context.extra.get("extracted_fields")
-            if spec is None or fields is None:
+            if spec is None:
                 return None
-            return (
-                f"Requirement spec (JSON):\n{json.dumps(spec)}\n\n"
-                f"Extracted document fields (JSON):\n{json.dumps(fields)}"
-            )
+            fields = context.extra.get("extracted_fields")
+            if fields is not None:
+                return (
+                    f"Requirement spec (JSON):\n{json.dumps(spec)}\n\n"
+                    f"Extracted document fields (JSON):\n{json.dumps(fields)}"
+                )
+            # No structured fields (this came from the plain-text extraction
+            # path, not the vision path) — fall back to raw text. GPT-OSS can
+            # still reason over it directly; only the deterministic rule
+            # engine's field-keyed checks (required_fields_present,
+            # client_profile_match) are unavailable on this path, and those
+            # already skip gracefully (return None) when extracted_fields
+            # isn't present, rather than erroring.
+            if context.raw_text:
+                return (
+                    f"Requirement spec (JSON):\n{json.dumps(spec)}\n\n"
+                    f"Extracted document text:\n{context.raw_text}"
+                )
+            return None
 
         if self.task == ModelTask.CLASSIFY_DOCUMENT:
             text = context.raw_text
