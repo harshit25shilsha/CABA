@@ -46,3 +46,13 @@ class ReviewDecision(str, enum.Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     REQUEST_REUPLOAD = "request_reupload"
+
+
+class AttachmentType(str, enum.Enum):
+    """Classifies a CA-side RequestAttachment. Purely descriptive — does not
+    affect any pipeline behavior, since attachments never enter the AI Brain."""
+
+    GUIDANCE = "guidance"
+    TEMPLATE = "template"
+    REFERENCE = "reference"
+    OTHER = "other"    

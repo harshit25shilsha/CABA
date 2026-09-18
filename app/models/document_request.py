@@ -9,6 +9,11 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.upload import DocumentUpload
 from app.models.enums import RequestStatus, RequirementStatus
 
+if TYPE_CHECKING:
+    from app.models.client import Client
+    from app.models.upload import DocumentUpload
+    from app.models.user import User
+
 
 class DocumentRequest(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """A CA-created request for a client: 'give me these documents,
