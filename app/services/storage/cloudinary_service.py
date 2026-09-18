@@ -7,12 +7,7 @@ import cloudinary.uploader
 import cloudinary.utils
 from cloudinary.exceptions import Error as CloudinaryError
 from app.core.config import settings
-from .schemas import (
-    DeleteResult,
-    MoveResult,
-    StorageStage,
-    UploadResult,
-)
+import app.schemas.document_upload
 
 class StorageConfigurationError(RuntimeError):
     """Raised when required Cloudinary configuration is missing."""
@@ -52,15 +47,15 @@ class CloudinaryStorageService:
 
     _DELIVERY_TYPE = "private"
 
-    _ALLOWED_TRANSITIONS: dict[StorageStage, set[StorageStage]] = {
-        StorageStage.TEMP: {
-            StorageStage.PERMANENT,
-            StorageStage.QUARANTINE,
-            StorageStage.REVIEW,
+    _ALLOWED_TRANSITIONS: dict[app.schemas.document_upload.StorageStage, set[app.schemas.document_upload.StorageStage]] = {
+        app.schemas.document_upload.StorageStage.TEMP: {
+            app.schemas.document_upload.StorageStage.PERMANENT,
+            app.schemas.document_upload.StorageStage.QUARANTINE,
+            app.schemas.document_upload.StorageStage.REVIEW,
         },
-        StorageStage.PERMANENT: set(),
-        StorageStage.QUARANTINE: set(),
-        StorageStage.REVIEW: set(),
+        app.schemas.document_upload.StorageStage.PERMANENT: set(),
+        app.schemas.document_upload.StorageStage.QUARANTINE: set(),
+        app.schemas.document_upload.StorageStage.REVIEW: set(),
     }
 
     def __init__(self) -> None:
@@ -102,7 +97,7 @@ class CloudinaryStorageService:
         *,
         filename: str,
         public_id: str | None = None,
-    ) -> UploadResult:
+    ) -> app.schemas.document_upload.UploadResult:
         """
         Upload a file directly to Cloudinary.
 
@@ -146,13 +141,13 @@ class CloudinaryStorageService:
                 f"for file {filename}: {exc}"
             ) from exc
 
-        return UploadResult(
+        return app.schemas.document_upload.UploadResult(
             public_id=result["public_id"],
             resource_type=result["resource_type"],
             format=result.get("format"),
             bytes=result.get("bytes"),
             source_url=result.get("secure_url"),
-            stage=StorageStage.TEMP,
+            stage=app.schemas.document_upload.StorageStage.TEMP,
         )
 
 
@@ -201,8 +196,6 @@ class CloudinaryStorageService:
             name = Path(filename).stem
 
         return f"{folder.strip('/')}/{name}"
-
-
 
     def generate_signed_url(
         self,
@@ -265,9 +258,9 @@ class CloudinaryStorageService:
         public_id: str,
         *,
         resource_type: str,
-        current_stage: StorageStage,
-        target_stage: StorageStage,
-    ) -> MoveResult:
+        current_stage: app.schemas.document_upload.StorageStage,
+        target_stage: app.schemas.document_upload.StorageStage,
+    ) -> app.schemas.document_upload.MoveResult:
         """
         Move a document from one lifecycle stage to another.
         """
@@ -325,26 +318,24 @@ class CloudinaryStorageService:
                 f"{source_public_id} to {target_public_id}: {exc}"
             ) from exc
 
-        return MoveResult(
+        return app.schemas.document_upload.MoveResult(
             old_public_id=source_public_id,
             public_id=result["public_id"],
             resource_type=result["resource_type"],
             stage=target_stage,
         )
 
-
-
     @staticmethod
-    def _folder_for_stage(stage: StorageStage) -> str:
+    def _folder_for_stage(stage: app.schemas.document_upload.StorageStage) -> str:
         folders = {
-            StorageStage.TEMP: settings.cloudinary_temp_folder,
-            StorageStage.PERMANENT: (
+            app.schemas.document_upload.StorageStage.TEMP: settings.cloudinary_temp_folder,
+            app.schemas.document_upload.StorageStage.PERMANENT: (
                 settings.CLOUDINARY_PERMANENT_FOLDER
             ),
-            StorageStage.QUARANTINE: (
+            app.schemas.document_upload.StorageStage.QUARANTINE: (
                 settings.CLOUDINARY_QUARANTINE_FOLDER
             ),
-            StorageStage.REVIEW: settings.CLOUDINARY_REVIEW_FOLDER
+            app.schemas.document_upload.StorageStage.REVIEW: settings.CLOUDINARY_REVIEW_FOLDER
         }
 
         try:
@@ -361,7 +352,7 @@ class CloudinaryStorageService:
         public_id: str,
         *,
         resource_type: str,
-    ) -> DeleteResult:
+    ) -> app.schemas.document_upload.DeleteResult:
         """
         Delete a document from Cloudinary.
         """
@@ -386,7 +377,7 @@ class CloudinaryStorageService:
 
         deleted = result.get("result") == "ok"
 
-        return DeleteResult(
+        return app.schemas.document_upload.DeleteResult(
             public_id=public_id,
             resource_type=resource_type,
             deleted=deleted,

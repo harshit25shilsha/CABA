@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.document_upload_ca import (
     router as document_upload_ca_router,
 )
-
+from app.api.v1.router import api_router
 from app.core.config import settings
 from app.middleware.auth_middleware import AuthMiddleware
 
@@ -14,7 +14,7 @@ app = FastAPI(
     debug=settings.DEBUG,
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
 )
-
+app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 app.add_middleware(AuthMiddleware)
 if settings.CORS_ORIGINS:
     app.add_middleware(
