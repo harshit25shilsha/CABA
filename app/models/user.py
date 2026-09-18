@@ -1,10 +1,15 @@
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import UserRole
+
+if TYPE_CHECKING:
+    from app.models.client import Client
+    from app.models.document_request import DocumentRequest
 
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
