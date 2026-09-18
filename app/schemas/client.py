@@ -10,9 +10,6 @@ class ClientCreate(BaseModel):
     phone: str | None = None
     pan_number: str | None = None
     profile_data: dict = {}
-    # TODO: replace with the authenticated CA's id once auth is built —
-    # no auth dependency exists yet, so the caller states who they are.
-    created_by_user_id: uuid.UUID
 
 
 class ClientRead(BaseModel):

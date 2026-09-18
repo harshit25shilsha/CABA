@@ -30,7 +30,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     }
 
     async def dispatch(self, request: Request, call_next):     
-        if request.url.path in self.PUBLIC_PATHS:
+        if request.url.path in self.PUBLIC_PATHS or request.url.path.startswith("/docs/") or request.url.path.startswith("/redoc/"):
             return await call_next(request)
 
         

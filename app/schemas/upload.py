@@ -14,6 +14,8 @@ class UploadRead(BaseModel):
     original_filename: str
     mime_type: str
     file_size_bytes: int
+    storage_resource_type: str
+    storage_format: str
     status: UploadStatus
     created_at: datetime
 
