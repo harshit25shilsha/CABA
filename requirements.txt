@@ -25,6 +25,7 @@ pillow==11.0.0
 
 # --- LLM integration -------------------------------------------------------------
 groq==0.13.1
+openai==1.58.1     # OpenAI-compatible client — used for the vision provider (Gemini's OpenAI-compat endpoint by default)
 
 # --- Storage ----------------------------------------------------------------------
 cloudinary==1.41.0

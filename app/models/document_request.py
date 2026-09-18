@@ -1,4 +1,5 @@
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -6,6 +7,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import RequestStatus, RequirementStatus
+
+if TYPE_CHECKING:
+    from app.models.client import Client
+    from app.models.upload import DocumentUpload
+    from app.models.user import User
 
 
 class DocumentRequest(Base, UUIDPrimaryKeyMixin, TimestampMixin):
