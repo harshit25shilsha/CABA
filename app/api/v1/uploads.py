@@ -1,6 +1,14 @@
-"""Client document uploads and access to their private Cloudinary assets."""
+"""Client document uploads and access to their private Cloudinary assets.
+
+Deliberately unauthenticated (no CA JWT dependency): per the Phase 1
+design, clients never log in as Users — they interact via the link tied
+to their DocumentRequest. Anyone with the request_id/requested_document_id
+(effectively a bearer capability via unguessable UUIDs) can upload here,
+same as they can already GET /requests/{id} with no auth.
+"""
 
 import base64
+import io
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
@@ -9,10 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
 
-from app.core.config import settings
 from app.db.session import get_db
 from app.models import DocumentUpload, RequestedDocument
-from app.models.enums import UploadStatus
+from app.models.enums import RequestStatus, UploadStatus
+from app.schemas.document_upload import validate_uploaded_file
 from app.schemas.upload import UploadAccepted, UploadRead
 from app.services.storage.cloudinary_service import (
     CloudinaryStorageService,
@@ -21,8 +29,13 @@ from app.services.storage.cloudinary_service import (
 )
 from app.workers.tasks import process_document_upload_task
 
-router = APIRouter(tags=["uploads"])
+router = APIRouter(prefix="/client", tags=["client-uploads"])
 storage_service = CloudinaryStorageService()
+
+# A request must be in one of these states for a client to upload against
+# it — DRAFT means the CA hasn't published it yet (see POST
+# /requests/{id}/publish), and CANCELLED/COMPLETED mean it's closed.
+UPLOADABLE_REQUEST_STATUSES = {RequestStatus.OPEN, RequestStatus.IN_PROGRESS}
 
 
 @router.post(
@@ -40,24 +53,24 @@ async def create_upload(
     if requested_doc is None:
         raise HTTPException(status_code=404, detail="Requested document not found on this request")
 
-    if not file.filename or not file.filename.strip():
-        raise HTTPException(status_code=422, detail="A filename is required for upload")
+    request_status = requested_doc.document_request.status
+    if request_status not in UPLOADABLE_REQUEST_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This request is not open for uploads (status: {request_status.value})",
+        )
 
-    file_bytes = await file.read()
-    mime_type = file.content_type or "application/octet-stream"
-    if mime_type not in settings.ALLOWED_MIME_TYPES:
-        raise HTTPException(status_code=422, detail=f"Unsupported file type: {mime_type}")
+    # Extension + content-type + size + magic-byte signature check, all in
+    # one place — replaces what used to be a redundant, weaker inline
+    # mime/size check here that never used this existing validator.
+    filename, extension, content_type, file_size = await validate_uploaded_file(file)
 
-    max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-    if len(file_bytes) > max_bytes:
-        raise HTTPException(status_code=422, detail=f"File exceeds the {settings.MAX_UPLOAD_SIZE_MB}MB limit")
-    if not file_bytes:
-        raise HTTPException(status_code=422, detail="Upload cannot be empty")
-
+    file_content = await file.read()
     await file.seek(0)
+
     try:
         storage_result = await run_in_threadpool(
-            storage_service.upload, file.file, filename=file.filename
+            storage_service.upload, io.BytesIO(file_content), filename=filename
         )
     except StorageUploadError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -69,12 +82,12 @@ async def create_upload(
         storage_provider="cloudinary",
         storage_public_id=storage_result.public_id,
         storage_resource_type=storage_result.resource_type,
-        storage_format=storage_result.format or file.filename.rsplit(".", 1)[-1].lower(),
+        storage_format=storage_result.format or extension.lstrip("."),
         # Private asset source URL; use the signed-URL endpoint for access.
         storage_url=storage_result.source_url or "",
-        original_filename=file.filename,
-        mime_type=mime_type,
-        file_size_bytes=storage_result.bytes or len(file_bytes),
+        original_filename=filename,
+        mime_type=content_type,
+        file_size_bytes=storage_result.bytes or file_size,
         upload_attempt_number=attempt_number,
         status=UploadStatus.UPLOADED,
     )
@@ -83,7 +96,7 @@ async def create_upload(
     await db.refresh(upload)
 
     async_result = process_document_upload_task.delay(
-        str(upload.id), base64.b64encode(file_bytes).decode()
+        str(upload.id), base64.b64encode(file_content).decode()
     )
     return UploadAccepted(upload=UploadRead.model_validate(upload), task_id=async_result.id)
 

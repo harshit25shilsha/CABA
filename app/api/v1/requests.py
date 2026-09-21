@@ -79,6 +79,30 @@ async def get_document_request(
     return document_request
 
 
+@router.post("/{request_id}/publish", response_model=DocumentRequestRead)
+async def publish_document_request(
+    request_id: uuid.UUID,
+    _caller_id: uuid.UUID = Depends(require_ca_or_sub_ca),
+    db: AsyncSession = Depends(get_db),
+) -> DocumentRequest:
+    """Moves a request from DRAFT to OPEN — the client upload endpoint
+    refuses uploads against a request that hasn't been published, so this
+    is the step that actually makes a request client-facing."""
+    document_request = (
+        await db.execute(select(DocumentRequest).where(DocumentRequest.id == request_id))
+    ).scalar_one_or_none()
+    if document_request is None:
+        raise HTTPException(status_code=404, detail="Document request not found")
+    if document_request.status != RequestStatus.DRAFT:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only a DRAFT request can be published (current status: {document_request.status.value})",
+        )
+    document_request.status = RequestStatus.OPEN
+    await db.commit()
+    return await _load_request(request_id, db)
+
+
 async def _load_request(request_id: uuid.UUID, db: AsyncSession) -> DocumentRequest | None:
     stmt = (
         select(DocumentRequest)
