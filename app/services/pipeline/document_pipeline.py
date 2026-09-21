@@ -30,7 +30,7 @@ from app.models import (
     Requirement,
     ValidationResult,
 )
-from app.models.enums import RequirementStatus, UploadStatus, ValidationCheckStatus
+from app.models.enums import RequestStatus, RequirementStatus, UploadStatus, ValidationCheckStatus
 from app.services.ai_brain import AIBrain, ModelTask, ProcessingContext, resolve_extraction_task
 
 logger = logging.getLogger(__name__)
@@ -300,6 +300,8 @@ def _combine_final_status(
         return UploadStatus.INVALID
     if semantic_status == "fail":
         return UploadStatus.INVALID
+    if semantic_status == "pass" and deterministic_overall != ValidationCheckStatus.FAIL:
+        return UploadStatus.VALID
     if deterministic_overall == ValidationCheckStatus.UNCERTAIN:
         return UploadStatus.NEEDS_REVIEW
     if semantic_status in (None, "uncertain"):
@@ -321,5 +323,57 @@ async def _finalize(db: AsyncSession, upload: DocumentUpload, result: PipelineRe
             },
         )
     )
+    await db.flush()
+    await _recompute_request_status(db, upload.requested_document.document_request_id)
     await db.commit()
     return result
+
+
+async def _recompute_request_status(db: AsyncSession, document_request_id: uuid.UUID) -> None:
+    """OPEN -> IN_PROGRESS as soon as any upload has been processed;
+    -> COMPLETED once every mandatory requested_document's LATEST upload
+    attempt (not just any historical attempt — a later reupload can
+    supersede an earlier VALID one) is VALID. A request that regresses
+    below that bar (e.g. a reupload invalidates a previously-satisfied
+    doc) drops back to IN_PROGRESS rather than staying stuck COMPLETED.
+    DRAFT and CANCELLED are left alone — this only manages the
+    OPEN/IN_PROGRESS/COMPLETED lifecycle once a request is actually live.
+    """
+    stmt = (
+        select(DocumentRequest)
+        .options(
+            selectinload(DocumentRequest.requested_documents).selectinload(
+                RequestedDocument.uploads
+            )
+        )
+        .where(DocumentRequest.id == document_request_id)
+        .with_for_update()
+        # Without this, a DocumentRequest/RequestedDocument already sitting
+        # in this session's identity map (e.g. this function called twice
+        # in one session) would keep its previously-loaded, now-stale
+        # `.uploads` collection instead of picking up rows committed since
+        # — expire_on_commit=False (db/session.py) means commit() alone
+        # doesn't force a reload. populate_existing forces this query's
+        # fresh results to overwrite whatever was cached.
+        .execution_options(populate_existing=True)
+    )
+    document_request = (await db.execute(stmt)).scalar_one()
+
+    if document_request.status in (RequestStatus.DRAFT, RequestStatus.CANCELLED):
+        return
+
+    mandatory_docs = [rd for rd in document_request.requested_documents if rd.is_mandatory]
+    all_mandatory_satisfied = bool(mandatory_docs) and all(
+        _latest_upload(rd) is not None and _latest_upload(rd).status == UploadStatus.VALID
+        for rd in mandatory_docs
+    )
+
+    document_request.status = (
+        RequestStatus.COMPLETED if all_mandatory_satisfied else RequestStatus.IN_PROGRESS
+    )
+
+
+def _latest_upload(requested_document: RequestedDocument) -> DocumentUpload | None:
+    if not requested_document.uploads:
+        return None
+    return max(requested_document.uploads, key=lambda u: u.upload_attempt_number)

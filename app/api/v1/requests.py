@@ -14,6 +14,23 @@ from app.schemas.document_request import DocumentRequestCreate, DocumentRequestR
 router = APIRouter(prefix="/requests", tags=["requests"])
 
 
+@router.get("", response_model=list[DocumentRequestRead])
+async def list_document_requests(
+    created_by_user_id: uuid.UUID = Depends(require_ca_or_sub_ca),
+    db: AsyncSession = Depends(get_db),
+) -> list[DocumentRequest]:
+    stmt = (
+        select(DocumentRequest)
+        .options(
+            selectinload(DocumentRequest.requested_documents).selectinload(RequestedDocument.requirement),
+            selectinload(DocumentRequest.attachments),
+        )
+        .where(DocumentRequest.created_by_user_id == created_by_user_id)
+        .order_by(DocumentRequest.created_at.desc())
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
 @router.post("", response_model=DocumentRequestRead, status_code=201)
 async def create_document_request(
     payload: DocumentRequestCreate,

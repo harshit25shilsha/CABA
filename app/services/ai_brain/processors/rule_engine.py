@@ -9,8 +9,9 @@ this generic per the architecture requirement.
 """
 
 import logging
+import re
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date as date_cls, datetime
 from typing import Any
 
 from app.core.config import settings
@@ -93,6 +94,87 @@ def check_required_fields_present(context: ProcessingContext) -> CheckResult | N
     )
 
 
+def _parse_date_value(value: Any) -> date_cls | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+
+        # Common bank statement patterns: "2025-04-01", "01-Apr-2025",
+        # "01 Apr 2025", "2025/04/01", and ranged strings like
+        # "01-Apr-2025 to 31-Mar-2026".
+        if " to " in text.lower() or " - " in text:
+            parts = re.split(r"\s+to\s+|\s+-\s+", text, maxsplit=1, flags=re.IGNORECASE)
+            if len(parts) == 2:
+                start = _parse_date_value(parts[0])
+                end = _parse_date_value(parts[1])
+                if start is not None and end is not None:
+                    return start
+                return start or end
+
+        for fmt in (
+            "%Y-%m-%d",
+            "%Y/%m/%d",
+            "%d-%b-%Y",
+            "%d-%B-%Y",
+            "%d %b %Y",
+            "%d %B %Y",
+            "%d-%m-%Y",
+            "%m/%d/%Y",
+            "%m-%d-%Y",
+        ):
+            try:
+                return datetime.strptime(text, fmt).date()
+            except ValueError:
+                continue
+
+    return None
+
+
+def _extract_document_date_bounds(fields: dict[str, Any]) -> tuple[date_cls | None, date_cls | None]:
+    # Accept every date-like field name that Gemini or OCR commonly emits for
+    # bank statements.
+    candidates = [
+        fields.get("document_date"),
+        fields.get("statement_date"),
+        fields.get("statement_start_date"),
+        fields.get("statement_end_date"),
+        fields.get("start_date"),
+        fields.get("end_date"),
+        fields.get("statement_period"),
+    ]
+
+    start = None
+    end = None
+
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        if isinstance(candidate, str) and " to " in candidate.lower():
+            parts = re.split(r"\s+to\s+|\s+-\s+", candidate, maxsplit=1, flags=re.IGNORECASE)
+            if len(parts) == 2:
+                start = _parse_date_value(parts[0]) or start
+                end = _parse_date_value(parts[1]) or end
+                continue
+        parsed = _parse_date_value(candidate)
+        if parsed is not None:
+            if start is None:
+                start = parsed
+            elif end is None:
+                end = parsed
+
+    if start is not None and end is None:
+        end = start
+    if end is not None and start is None:
+        start = end
+
+    return start, end
+
+
 def check_date_within_range(context: ProcessingContext) -> CheckResult | None:
     spec = context.extra.get("normalized_spec")
     fields = context.extra.get("extracted_fields")
@@ -102,34 +184,44 @@ def check_date_within_range(context: ProcessingContext) -> CheckResult | None:
     if not date_range:
         return None
 
-    doc_date_str = fields.get("document_date") or fields.get("statement_date")
-    if not doc_date_str:
+    start_date, end_date = _extract_document_date_bounds(fields)
+    if start_date is None and end_date is None:
         return _check(
             "date_within_range",
             ValidationCheckStatus.UNCERTAIN,
             expected=date_range,
-            detail="No date field found in extracted data",
+            detail="No recognizable statement date/range field found in extracted data",
         )
 
-    try:
-        doc_date = datetime.fromisoformat(doc_date_str).date()
-        start = datetime.fromisoformat(date_range["start"]).date() if date_range.get("start") else None
-        end = datetime.fromisoformat(date_range["end"]).date() if date_range.get("end") else None
-    except (ValueError, TypeError) as exc:
+    start = _parse_date_value(date_range.get("start"))
+    end = _parse_date_value(date_range.get("end"))
+
+    if start_date is None:
+        start_date = end_date
+    if end_date is None:
+        end_date = start_date
+
+    if start_date is not None and end_date is not None:
+        in_range = (start is None or start_date >= start) and (end is None or end_date <= end)
         return _check(
             "date_within_range",
-            ValidationCheckStatus.UNCERTAIN,
+            ValidationCheckStatus.PASS if in_range else ValidationCheckStatus.FAIL,
             expected=date_range,
-            actual=doc_date_str,
-            detail=f"Unparseable date: {exc}",
+            actual={
+                "start": start_date.isoformat(),
+                "end": end_date.isoformat(),
+            },
         )
 
-    in_range = (start is None or doc_date >= start) and (end is None or doc_date <= end)
     return _check(
         "date_within_range",
-        ValidationCheckStatus.PASS if in_range else ValidationCheckStatus.FAIL,
+        ValidationCheckStatus.UNCERTAIN,
         expected=date_range,
-        actual=doc_date.isoformat(),
+        actual={
+            "start": start_date.isoformat() if start_date else None,
+            "end": end_date.isoformat() if end_date else None,
+        },
+        detail="Unable to fully resolve statement date bounds",
     )
 
 
