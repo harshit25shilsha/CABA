@@ -11,6 +11,22 @@ a script before any worker context exists), shared_task silently falls
 back to Celery's default app (default broker: amqp://), not the Redis
 broker configured here. Binding directly to celery_app avoids that.
 
+IMPORTANT — do not call .delay()/.apply_async() on this task from inside
+async code (an async FastAPI route, an async test) with
+CELERY_TASK_ALWAYS_EAGER=True. A real Celery worker runs tasks in a plain
+sync context with no event loop of its own, so asyncio.run() inside this
+task is correct there. But eager mode executes the task inline, and if
+the caller is already inside a running event loop, asyncio.run() raises.
+The tempting fix — falling back to a fresh event loop in a separate
+thread — was tried and reverted: it caused this task's DB session to use
+the shared async engine's connection pool from a second event loop,
+which corrupted the pool for every other coroutine sharing it in the
+same process (asyncpg connections are loop-affine and cannot safely be
+used from more than one loop). Test this task's logic directly (call the
+function, not through .delay(), as the existing tests do) or test the
+upload endpoint by mocking .delay() and asserting it was called with the
+right arguments — never both at once through eager mode from async code.
+
 file_bytes is passed base64-encoded because Celery's JSON serializer
 can't carry raw bytes. For large files this bloats the broker message;
 once the storage service can be queried by public_id, switch this task

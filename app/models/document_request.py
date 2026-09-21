@@ -6,11 +6,11 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.upload import DocumentUpload
 from app.models.enums import RequestStatus, RequirementStatus
 
 if TYPE_CHECKING:
     from app.models.client import Client
+    from app.models.request_attachment import RequestAttachment
     from app.models.upload import DocumentUpload
     from app.models.user import User
 
@@ -44,6 +44,9 @@ class DocumentRequest(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     client: Mapped["Client"] = relationship(back_populates="document_requests")
     created_by: Mapped["User"] = relationship(back_populates="document_requests")
     requested_documents: Mapped[list["RequestedDocument"]] = relationship(
+        back_populates="document_request", cascade="all, delete-orphan"
+    )
+    attachments: Mapped[list["RequestAttachment"]] = relationship(
         back_populates="document_request", cascade="all, delete-orphan"
     )
 

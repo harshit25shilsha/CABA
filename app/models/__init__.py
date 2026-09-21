@@ -19,7 +19,7 @@ from app.models.review import AuditEvent, ReviewAction
 from app.models.service import Service, SubService
 from app.models.upload import Document, DocumentUpload
 from app.models.user import User
-
+from app.models.request_attachment import RequestAttachment
 __all__ = [
     "Base",
     "User",
@@ -35,4 +35,5 @@ __all__ = [
     "ValidationResult",
     "ReviewAction",
     "AuditEvent",
+    "RequestAttachment",
 ]

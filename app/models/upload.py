@@ -9,6 +9,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import UploadStatus
 
+if TYPE_CHECKING:
+    from app.models.ai_result import AIProcessingResult, ValidationResult
+    from app.models.document_request import RequestedDocument
+    from app.models.review import ReviewAction
+
 
 class DocumentUpload(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """Every upload/processing attempt — kept even for INVALID/expired
@@ -27,6 +32,8 @@ class DocumentUpload(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     storage_provider: Mapped[str] = mapped_column(String(50), nullable=False, default="cloudinary")
     storage_public_id: Mapped[str] = mapped_column(String(500), nullable=False)
+    storage_resource_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    storage_format: Mapped[str] = mapped_column(String(50), nullable=False)
     storage_url: Mapped[str] = mapped_column(String(1000), nullable=False)
 
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -71,6 +78,8 @@ class Document(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("clients.id"), nullable=False, index=True
     )
     storage_public_id: Mapped[str] = mapped_column(String(500), nullable=False)
+    storage_resource_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    storage_format: Mapped[str] = mapped_column(String(50), nullable=False)
     storage_url: Mapped[str] = mapped_column(String(1000), nullable=False)
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
