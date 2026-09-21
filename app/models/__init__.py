@@ -15,11 +15,12 @@ from app.models.document_request import (
     Requirement,
     RequestedDocument,
 )
+from app.models.request_attachment import RequestAttachment
 from app.models.review import AuditEvent, ReviewAction
 from app.models.service import Service, SubService
 from app.models.upload import Document, DocumentUpload
 from app.models.user import User
-from app.models.request_attachment import RequestAttachment
+
 __all__ = [
     "Base",
     "User",
@@ -29,11 +30,11 @@ __all__ = [
     "DocumentRequest",
     "RequestedDocument",
     "Requirement",
+    "RequestAttachment",
     "DocumentUpload",
     "Document",
     "AIProcessingResult",
     "ValidationResult",
     "ReviewAction",
     "AuditEvent",
-    "RequestAttachment",
 ]

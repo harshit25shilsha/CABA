@@ -4,7 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 from app.models.enums import RequestStatus, RequirementStatus
-# from app.schemas.request_attachment import RequestAttachmentRead
+from app.schemas.request_attachment import RequestAttachmentRead
 
 
 class RequestedDocumentCreate(BaseModel):
@@ -61,5 +61,5 @@ class DocumentRequestRead(BaseModel):
     status: RequestStatus
     description: str | None
     requested_documents: list[RequestedDocumentRead]
-    # attachments: list[RequestAttachmentRead]
+    attachments: list[RequestAttachmentRead]
     created_at: datetime

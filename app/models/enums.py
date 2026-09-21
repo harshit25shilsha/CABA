@@ -55,4 +55,4 @@ class AttachmentType(str, enum.Enum):
     GUIDANCE = "guidance"
     TEMPLATE = "template"
     REFERENCE = "reference"
-    OTHER = "other"    
+    OTHER = "other"
