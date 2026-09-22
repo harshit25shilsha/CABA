@@ -5,20 +5,32 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.v1.auth_dependencies import require_ca_or_sub_ca
+from app.api.v1.dependencies import require_ca_or_sub_ca,get_current_user
 from app.db.session import get_db
 from app.models import Client, DocumentRequest, RequestedDocument, Requirement, Service, SubService
 from app.models.enums import RequestStatus, RequirementStatus
 from app.schemas.document_request import DocumentRequestCreate, DocumentRequestRead
+from app.api.v1.dependencies import require_ca_or_sub_ca
 
 router = APIRouter(prefix="/requests", tags=["requests"])
 
+# @router.get("/test-auth")
+# async def test_auth(
+#     current_user: dict = Depends(get_current_user),
+# ):
+#     return {
+#         "message": "Authentication successful",
+#         "user_id": str(current_user["user_id"]),
+#         "role": current_user["role"],
+#     }
 
 @router.get("", response_model=list[DocumentRequestRead])
 async def list_document_requests(
-    created_by_user_id: uuid.UUID = Depends(require_ca_or_sub_ca),
+    # created_by_user_id: uuid.UUID = Depends(require_ca_or_sub_ca),
+    current_user: dict = Depends(require_ca_or_sub_ca),
     db: AsyncSession = Depends(get_db),
 ) -> list[DocumentRequest]:
+    created_by_user_id = current_user["user_id"]
     stmt = (
         select(DocumentRequest)
         .options(
@@ -34,9 +46,11 @@ async def list_document_requests(
 @router.post("", response_model=DocumentRequestRead, status_code=201)
 async def create_document_request(
     payload: DocumentRequestCreate,
-    created_by_user_id: uuid.UUID = Depends(require_ca_or_sub_ca),
+    # created_by_user_id: uuid.UUID = Depends(require_ca_or_sub_ca),
+    current_user: dict = Depends(require_ca_or_sub_ca),
     db: AsyncSession = Depends(get_db),
 ) -> DocumentRequest:
+    created_by_user_id = current_user["user_id"]
     client = (await db.execute(select(Client).where(Client.id == payload.client_id))).scalar_one_or_none()
     if client is None:
         raise HTTPException(status_code=404, detail="Client not found")

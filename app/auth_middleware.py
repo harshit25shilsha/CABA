@@ -1,14 +1,133 @@
+# from __future__ import annotations
+
+# import uuid
+
+# import jwt
+# from fastapi import Request
+# from starlette.middleware.base import BaseHTTPMiddleware
+# from starlette.responses import JSONResponse
+
+# from app.core.config import settings
+
+
+# class AuthMiddleware(BaseHTTPMiddleware):
+#     """
+#     Middleware responsible for:
+
+#     - Reading JWT from the Authorization header
+#     - Validating the JWT
+#     - Extracting authenticated user information
+#     - Storing user information in request.state
+#     """
+
+#     PUBLIC_PATHS = {
+#         "/health",
+#         "/docs",
+#         "/redoc",
+#         "/openapi.json",
+#         f"{settings.API_V1_PREFIX}/openapi.json",
+#         "/auth/login",
+#     }
+
+#     async def dispatch(self, request: Request, call_next):     
+#         if request.url.path in self.PUBLIC_PATHS or request.url.path.startswith("/docs/") or request.url.path.startswith("/redoc/"):
+#             return await call_next(request)
+
+        
+#         authorization = request.headers.get("Authorization")
+
+#         if not authorization:
+#             return JSONResponse(
+#                 status_code=401,
+#                 content={
+#                     "detail": "Authorization header is required"
+#                 },
+#             )
+
+        
+#         if not authorization.startswith("Bearer "):
+#             return JSONResponse(
+#                 status_code=401,
+#                 content={
+#                     "detail": "Invalid authorization header"
+#                 },
+#             )
+
+        
+#         token = authorization.replace("Bearer ", "", 1).strip()
+
+#         if not token:
+#             return JSONResponse(
+#                 status_code=401,
+#                 content={
+#                     "detail": "Bearer token is required"
+#                 },
+#             )
+
+#         try:
+            
+#             payload = jwt.decode(
+#                 token,
+#                 settings.SECRET_KEY,
+#                 algorithms=[settings.ALGORITHM],
+#             )
+
+            
+#             user_id = payload.get("user_id")
+#             role = payload.get("role")
+
+            
+#             if not user_id:
+#                 return JSONResponse(
+#                     status_code=401,
+#                     content={
+#                         "detail": "user_id is missing from token"
+#                     },
+#                 )
+
+            
+#             try:
+#                 user_id = uuid.UUID(str(user_id))
+#             except ValueError:
+#                 return JSONResponse(
+#                     status_code=401,
+#                     content={
+#                         "detail": "Invalid user_id in token"
+#                     },
+#                 )
+
+ 
+#             request.state.user_id = user_id
+#             request.state.role = role
+#             request.state.jwt_payload = payload
+
+#         except jwt.ExpiredSignatureError:
+#             return JSONResponse(
+#                 status_code=401,
+#                 content={
+#                     "detail": "Token has expired"
+#                 },
+#             )
+
+#         except jwt.InvalidTokenError:
+#             return JSONResponse(
+#                 status_code=401,
+#                 content={
+#                     "detail": "Invalid token"
+#                 },
+#             )
+
+#         return await call_next(request)
+
+
+
 from __future__ import annotations
-
 import uuid
-
-import jwt
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-
 from app.core.config import settings
-
+from app.core.security import decode_access_token
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """
@@ -29,11 +148,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/auth/login",
     }
 
-    async def dispatch(self, request: Request, call_next):     
-        if request.url.path in self.PUBLIC_PATHS or request.url.path.startswith("/docs/") or request.url.path.startswith("/redoc/"):
+    async def dispatch(self, request: Request, call_next):
+
+        # Public endpoints do not require authentication
+        if (
+            request.url.path in self.PUBLIC_PATHS
+            or request.url.path.startswith("/docs/")
+            or request.url.path.startswith("/redoc/")
+        ):
             return await call_next(request)
 
-        
         authorization = request.headers.get("Authorization")
 
         if not authorization:
@@ -44,7 +168,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        
         if not authorization.startswith("Bearer "):
             return JSONResponse(
                 status_code=401,
@@ -53,8 +176,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        
-        token = authorization.replace("Bearer ", "", 1).strip()
+        token = authorization.split(" ", 1)[1].strip()
 
         if not token:
             return JSONResponse(
@@ -65,18 +187,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
         try:
-            
-            payload = jwt.decode(
-                token,
-                settings.SECRET_KEY,
-                algorithms=[settings.ALGORITHM],
-            )
+            # JWT verification is handled centrally by security.py
+            payload = decode_access_token(token)
 
-            
             user_id = payload.get("user_id")
             role = payload.get("role")
 
-            
             if not user_id:
                 return JSONResponse(
                     status_code=401,
@@ -85,7 +201,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     },
                 )
 
-            
             try:
                 user_id = uuid.UUID(str(user_id))
             except ValueError:
@@ -96,24 +211,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     },
                 )
 
- 
+            if not role:
+                return JSONResponse(
+                    status_code=401,
+                    content={
+                        "detail": "role is missing from token"
+                    },
+                )
+
             request.state.user_id = user_id
             request.state.role = role
             request.state.jwt_payload = payload
 
-        except jwt.ExpiredSignatureError:
+        except Exception as exc:
+            # We will refine this exception handling in the next step
+            # so expected JWT errors are handled separately.
             return JSONResponse(
                 status_code=401,
                 content={
-                    "detail": "Token has expired"
-                },
-            )
-
-        except jwt.InvalidTokenError:
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "detail": "Invalid token"
+                    "detail": str(exc)
                 },
             )
 
