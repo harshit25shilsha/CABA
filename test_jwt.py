@@ -7,12 +7,12 @@ from app.core.config import settings
 from app.core.security import get_user_id_from_token
 
 
-user_id = uuid.UUID("a1c60236-f8ed-4402-b018-a13e0ef93f06")
+user_id = uuid.UUID("c506b58f-86de-46f1-b40b-c90b13795edc")
 
 payload = {
     "user_id": str(user_id),
     "role": "CA",
-    "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+    "exp": datetime.now(timezone.utc) + timedelta(minutes=60),
 }
 
 token = jwt.encode(
