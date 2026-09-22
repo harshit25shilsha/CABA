@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models import DocumentUpload, ReviewAction
 from app.models.enums import ReviewDecision, UploadStatus
 from app.schemas.review import ReviewActionCreate, ReviewActionRead
+from app.services.pipeline.document_pipeline import ensure_valid_document_record
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 
@@ -23,7 +24,9 @@ async def create_review_action(
 ) -> ReviewAction:
     upload = (
         await db.execute(
-            select(DocumentUpload).where(DocumentUpload.id == upload_id)
+            select(DocumentUpload)
+            .options(selectinload(DocumentUpload.document))
+            .where(DocumentUpload.id == upload_id)
         )
     ).scalar_one_or_none()
     if upload is None:
@@ -45,6 +48,7 @@ async def create_review_action(
 
     if payload.decision == ReviewDecision.APPROVED:
         upload.status = UploadStatus.VALID
+        await ensure_valid_document_record(db, upload)
     elif payload.decision == ReviewDecision.REJECTED:
         upload.status = UploadStatus.INVALID
     elif payload.decision == ReviewDecision.REQUEST_REUPLOAD:

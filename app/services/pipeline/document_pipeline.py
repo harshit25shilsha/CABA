@@ -24,6 +24,7 @@ from app.models import (
     AIProcessingResult,
     AuditEvent,
     Client,
+    Document,
     DocumentRequest,
     DocumentUpload,
     RequestedDocument,
@@ -226,6 +227,7 @@ async def _load_upload(upload_id: uuid.UUID, db: AsyncSession) -> DocumentUpload
             selectinload(DocumentUpload.requested_document)
             .selectinload(RequestedDocument.document_request)
             .selectinload(DocumentRequest.client),
+            selectinload(DocumentUpload.document),
         )
         .where(DocumentUpload.id == upload_id)
     )
@@ -309,8 +311,40 @@ def _combine_final_status(
     return UploadStatus.VALID
 
 
+async def ensure_valid_document_record(db: AsyncSession, upload: DocumentUpload) -> Document | None:
+    """Create the permanent document row once a document upload is accepted."""
+    existing_doc = getattr(upload, "document", None)
+    if existing_doc is not None:
+        return existing_doc
+
+    if upload.status != UploadStatus.VALID:
+        return None
+
+    existing = (await db.execute(select(Document).where(Document.document_upload_id == upload.id))).scalar_one_or_none()
+    if existing is not None:
+        upload.document = existing
+        return existing
+
+    permanent_doc = Document(
+        document_upload_id=upload.id,
+        requested_document_id=upload.requested_document_id,
+        client_id=upload.client_id,
+        storage_public_id=upload.storage_public_id,
+        storage_resource_type=upload.storage_resource_type,
+        storage_format=upload.storage_format,
+        storage_url=upload.storage_url,
+        accepted_at=datetime.now(timezone.utc),
+    )
+    db.add(permanent_doc)
+    await db.flush()
+    upload.document = permanent_doc
+    return permanent_doc
+
+
 async def _finalize(db: AsyncSession, upload: DocumentUpload, result: PipelineResult) -> PipelineResult:
     upload.status = result.final_status
+    if result.final_status == UploadStatus.VALID:
+        await ensure_valid_document_record(db, upload)
     db.add(
         AuditEvent(
             entity_type="document_upload",
