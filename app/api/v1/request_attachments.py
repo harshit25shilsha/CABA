@@ -13,13 +13,12 @@ from app.models import DocumentRequest, RequestAttachment
 from app.models.enums import AttachmentType
 from app.schemas.request_attachment import RequestAttachmentRead
 from app.services.storage.cloudinary_service import (
-    CloudinaryStorageService,
     StorageUploadError,
     StorageUrlGenerationError,
+    get_storage_service,
 )
 
 router = APIRouter(prefix="/requests/{request_id}/attachments", tags=["request-attachments"])
-storage_service = CloudinaryStorageService()
 
 
 @router.post("", response_model=RequestAttachmentRead, status_code=201)
@@ -29,6 +28,7 @@ async def create_request_attachment(
     uploaded_by_user_id: uuid.UUID = Depends(require_ca_or_sub_ca),
     attachment_type: AttachmentType = Form(default=AttachmentType.OTHER),
     description: str | None = Form(default=None),
+    storage_service=Depends(get_storage_service),
     db: AsyncSession = Depends(get_db),
 ) -> RequestAttachment:
     document_request = (
@@ -96,8 +96,8 @@ async def list_request_attachments(
 async def get_request_attachment_signed_url(
     request_id: uuid.UUID,
     attachment_id: uuid.UUID,
-    _user_id: uuid.UUID = Depends(require_ca_or_sub_ca),
     expires_in: int = Query(default=300, ge=1, le=3600),
+    storage_service=Depends(get_storage_service),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str | int]:
     stmt = select(RequestAttachment).where(

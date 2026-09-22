@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, BinaryIO
 import cloudinary
@@ -26,6 +27,12 @@ class InvalidLifecycleTransition(StorageMoveError):
 
 class StorageDeleteError(RuntimeError):
     """Raised when a file cannot be deleted from Cloudinary."""
+
+@lru_cache
+def get_storage_service() -> "CloudinaryStorageService":
+    """Create a Cloudinary storage service only when the route actually needs it."""
+    return CloudinaryStorageService()
+
 
 class CloudinaryStorageService:
     """
@@ -326,16 +333,17 @@ class CloudinaryStorageService:
         )
 
     @staticmethod
+    @staticmethod
     def _folder_for_stage(stage: app.schemas.document_upload.StorageStage) -> str:
         folders = {
-            app.schemas.document_upload.StorageStage.TEMP: settings.cloudinary_temp_folder,
+            app.schemas.document_upload.StorageStage.TEMP: settings.CLOUDINARY_TEMP_FOLDER,
             app.schemas.document_upload.StorageStage.PERMANENT: (
                 settings.CLOUDINARY_PERMANENT_FOLDER
             ),
             app.schemas.document_upload.StorageStage.QUARANTINE: (
                 settings.CLOUDINARY_QUARANTINE_FOLDER
             ),
-            app.schemas.document_upload.StorageStage.REVIEW: settings.CLOUDINARY_REVIEW_FOLDER
+            app.schemas.document_upload.StorageStage.REVIEW: settings.CLOUDINARY_REVIEW_FOLDER,
         }
 
         try:

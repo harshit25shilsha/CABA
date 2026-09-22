@@ -52,6 +52,7 @@ class PipelineResult:
     classification: dict | None = None
     semantic_validation: dict | None = None
     deterministic_checks: list[dict] = field(default_factory=list)
+    missing_required_documents: list[str] = field(default_factory=list)
     explanation: str | None = None
     failure_reason: str | None = None
 
@@ -345,6 +346,27 @@ async def _finalize(db: AsyncSession, upload: DocumentUpload, result: PipelineRe
     upload.status = result.final_status
     if result.final_status == UploadStatus.VALID:
         await ensure_valid_document_record(db, upload)
+
+    missing_doc_types = await _missing_mandatory_document_types_for_request(
+        db, upload.requested_document.document_request_id,
+        exclude_requested_document_id=upload.requested_document_id,
+    )
+    result.missing_required_documents = missing_doc_types
+    if missing_doc_types:
+        missing_notice = _missing_document_notice(missing_doc_types)
+        if result.explanation:
+            result.explanation = f"{result.explanation} {missing_notice}"
+        else:
+            result.explanation = missing_notice
+        if result.failure_reason is None:
+            result.failure_reason = missing_notice
+    elif upload.status == UploadStatus.VALID:
+        result.explanation = (
+            result.explanation
+            if result.explanation
+            else "This document meets the requirement and is accepted."
+        )
+
     db.add(
         AuditEvent(
             entity_type="document_upload",
@@ -396,14 +418,64 @@ async def _recompute_request_status(db: AsyncSession, document_request_id: uuid.
     if document_request.status in (RequestStatus.DRAFT, RequestStatus.CANCELLED):
         return
 
-    mandatory_docs = [rd for rd in document_request.requested_documents if rd.is_mandatory]
-    all_mandatory_satisfied = bool(mandatory_docs) and all(
-        _latest_upload(rd) is not None and _latest_upload(rd).status == UploadStatus.VALID
-        for rd in mandatory_docs
+    missing_mandatory_doc_types = await _missing_mandatory_document_types_for_request(
+        db, document_request_id
+    )
+    document_request.status = (
+        RequestStatus.COMPLETED if not missing_mandatory_doc_types else RequestStatus.IN_PROGRESS
     )
 
-    document_request.status = (
-        RequestStatus.COMPLETED if all_mandatory_satisfied else RequestStatus.IN_PROGRESS
+
+async def _missing_mandatory_document_types_for_request(
+    db: AsyncSession,
+    document_request_id: uuid.UUID,
+    exclude_requested_document_id: uuid.UUID | None = None,
+) -> list[str]:
+    """Return mandatory document types that still have no valid latest upload.
+
+    When a single upload is being finalized, the current requested document can be
+    excluded from the "missing" list so the result reflects only documents still
+    outstanding for the request, not the one just processed.
+    """
+    stmt = (
+        select(DocumentRequest)
+        .options(
+            selectinload(DocumentRequest.requested_documents).selectinload(
+                RequestedDocument.uploads
+            )
+        )
+        .where(DocumentRequest.id == document_request_id)
+    )
+    document_request = (await db.execute(stmt)).scalar_one()
+
+    missing: list[str] = []
+    for requested_document in document_request.requested_documents:
+        if not requested_document.is_mandatory:
+            continue
+        if (
+            exclude_requested_document_id is not None
+            and requested_document.id == exclude_requested_document_id
+        ):
+            continue
+        latest = _latest_upload(requested_document)
+        if latest is None or latest.status != UploadStatus.VALID:
+            missing.append(requested_document.document_type)
+    return missing
+
+
+def _missing_document_notice(missing_doc_types: list[str]) -> str:
+    """Human-readable explanation for required docs still outstanding on the request."""
+    if not missing_doc_types:
+        return ""
+    doc_list = ", ".join(missing_doc_types)
+    if len(missing_doc_types) == 1:
+        return (
+            "Request is still incomplete: the mandatory document "
+            f"'{missing_doc_types[0]}' has not been uploaded and validated yet."
+        )
+    return (
+        "Request is still incomplete: these mandatory documents have not been uploaded and "
+        f"validated yet: {doc_list}."
     )
 
 

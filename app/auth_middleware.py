@@ -29,92 +29,53 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/auth/login",
     }
 
-    async def dispatch(self, request: Request, call_next):     
-        if request.url.path in self.PUBLIC_PATHS or request.url.path.startswith("/docs/") or request.url.path.startswith("/redoc/"):
+    async def dispatch(self, request: Request, call_next):
+        if (
+            request.url.path in self.PUBLIC_PATHS
+            or request.url.path.startswith("/docs/")
+            or request.url.path.startswith("/redoc/")
+        ):
             return await call_next(request)
 
-        
         authorization = request.headers.get("Authorization")
 
         if not authorization:
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "detail": "Authorization header is required"
-                },
-            )
+            return JSONResponse(status_code=401, content={"detail": "Authorization header is required"})
 
-        
         if not authorization.startswith("Bearer "):
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "detail": "Invalid authorization header"
-                },
-            )
+            return JSONResponse(status_code=401, content={"detail": "Invalid authorization header"})
 
-        
         token = authorization.replace("Bearer ", "", 1).strip()
 
         if not token:
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "detail": "Bearer token is required"
-                },
-            )
+            return JSONResponse(status_code=401, content={"detail": "Bearer token is required"})
 
         try:
-            
             payload = jwt.decode(
                 token,
                 settings.SECRET_KEY,
                 algorithms=[settings.ALGORITHM],
             )
 
-            
             user_id = payload.get("user_id")
             role = payload.get("role")
 
-            
             if not user_id:
-                return JSONResponse(
-                    status_code=401,
-                    content={
-                        "detail": "user_id is missing from token"
-                    },
-                )
+                return JSONResponse(status_code=401, content={"detail": "user_id is missing from token"})
 
-            
             try:
                 user_id = uuid.UUID(str(user_id))
             except ValueError:
-                return JSONResponse(
-                    status_code=401,
-                    content={
-                        "detail": "Invalid user_id in token"
-                    },
-                )
+                return JSONResponse(status_code=401, content={"detail": "Invalid user_id in token"})
 
- 
             request.state.user_id = user_id
             request.state.role = role
             request.state.jwt_payload = payload
 
         except jwt.ExpiredSignatureError:
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "detail": "Token has expired"
-                },
-            )
+            return JSONResponse(status_code=401, content={"detail": "Token has expired"})
 
         except jwt.InvalidTokenError:
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "detail": "Invalid token"
-                },
-            )
+            return JSONResponse(status_code=401, content={"detail": "Invalid token"})
 
         return await call_next(request)

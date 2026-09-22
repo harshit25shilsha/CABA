@@ -11,7 +11,7 @@ import base64
 import io
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -23,19 +23,105 @@ from app.models.enums import RequestStatus, UploadStatus
 from app.schemas.document_upload import validate_uploaded_file
 from app.schemas.upload import UploadAccepted, UploadRead
 from app.services.storage.cloudinary_service import (
-    CloudinaryStorageService,
     StorageUploadError,
     StorageUrlGenerationError,
+    get_storage_service,
 )
-from app.workers.tasks import process_document_upload_task
+from app.workers.tasks import process_document_upload_batch_task, process_document_upload_task
 
 router = APIRouter(prefix="/client", tags=["client-uploads"])
-storage_service = CloudinaryStorageService()
 
 # A request must be in one of these states for a client to upload against
 # it — DRAFT means the CA hasn't published it yet (see POST
 # /requests/{id}/publish), and CANCELLED/COMPLETED mean it's closed.
 UPLOADABLE_REQUEST_STATUSES = {RequestStatus.OPEN, RequestStatus.IN_PROGRESS}
+
+
+@router.post(
+    "/requests/{request_id}/documents/uploads",
+    response_model=list[UploadAccepted],
+    status_code=202,
+)
+async def create_bulk_uploads(
+    request_id: uuid.UUID,
+    files: list[UploadFile] = File(...),
+    requested_document_ids: list[uuid.UUID] = Form(...),
+    storage_service=Depends(get_storage_service),
+    db: AsyncSession = Depends(get_db),
+) -> list[UploadAccepted]:
+    if not files:
+        raise HTTPException(status_code=422, detail="At least one file is required.")
+    if len(files) != len(requested_document_ids):
+        raise HTTPException(
+            status_code=422,
+            detail="The number of files and requested_document_ids must match.",
+        )
+    if len(set(requested_document_ids)) != len(requested_document_ids):
+        raise HTTPException(
+            status_code=422,
+            detail="requested_document_ids must be unique for a bulk upload.",
+        )
+
+    accepted: list[UploadAccepted] = []
+    bulk_upload_payload: list[dict[str, str]] = []
+    for file, requested_document_id in zip(files, requested_document_ids):
+        requested_doc = await _load_requested_document(request_id, requested_document_id, db)
+        if requested_doc is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Requested document {requested_document_id} not found on this request",
+            )
+
+        request_status = requested_doc.document_request.status
+        if request_status not in UPLOADABLE_REQUEST_STATUSES:
+            raise HTTPException(
+                status_code=409,
+                detail=f"This request is not open for uploads (status: {request_status.value})",
+            )
+
+        filename, extension, content_type, file_size = await validate_uploaded_file(file)
+        file_content = await file.read()
+        await file.seek(0)
+
+        try:
+            storage_result = await run_in_threadpool(
+                storage_service.upload, io.BytesIO(file_content), filename=filename
+            )
+        except StorageUploadError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        attempt_number = await _next_attempt_number(requested_document_id, db)
+        upload = DocumentUpload(
+            requested_document_id=requested_document_id,
+            client_id=requested_doc.document_request.client_id,
+            storage_provider="cloudinary",
+            storage_public_id=storage_result.public_id,
+            storage_resource_type=storage_result.resource_type,
+            storage_format=storage_result.format or extension.lstrip("."),
+            storage_url=storage_result.source_url or "",
+            original_filename=filename,
+            mime_type=content_type,
+            file_size_bytes=storage_result.bytes or file_size,
+            upload_attempt_number=attempt_number,
+            status=UploadStatus.UPLOADED,
+        )
+        db.add(upload)
+        await db.commit()
+        await db.refresh(upload)
+
+        bulk_upload_payload.append(
+            {"upload_id": str(upload.id), "file_bytes_b64": base64.b64encode(file_content).decode()}
+        )
+        accepted.append(UploadAccepted(upload=UploadRead.model_validate(upload), task_id="pending"))
+
+    if not bulk_upload_payload:
+        return accepted
+
+    batch_result = process_document_upload_batch_task.delay(str(request_id), bulk_upload_payload)
+    for item in accepted:
+        item.task_id = batch_result.id
+
+    return accepted
 
 
 @router.post(
@@ -47,6 +133,7 @@ async def create_upload(
     request_id: uuid.UUID,
     requested_document_id: uuid.UUID,
     file: UploadFile,
+    storage_service=Depends(get_storage_service),
     db: AsyncSession = Depends(get_db),
 ) -> UploadAccepted:
     requested_doc = await _load_requested_document(request_id, requested_document_id, db)
@@ -127,6 +214,7 @@ async def get_upload_signed_url(
     requested_document_id: uuid.UUID,
     upload_id: uuid.UUID,
     expires_in: int = Query(default=300, ge=1, le=3600),
+    storage_service=Depends(get_storage_service),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str | int]:
     stmt = (
