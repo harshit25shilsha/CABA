@@ -26,3 +26,25 @@ class UploadAccepted(BaseModel):
 
     upload: UploadRead
     task_id: str
+
+
+class UploadResultRead(BaseModel):
+    """Final post-processing result for one uploaded document."""
+
+    upload_id: uuid.UUID
+    requested_document_id: uuid.UUID
+    status: UploadStatus
+    explanation: str | None = None
+    recommendation: str | None = None
+    missing_required_documents: list[str] = []
+    still_missing_required_documents: list[str] = []
+
+
+class UploadRequestSummary(BaseModel):
+    """Request-level summary used by the client after a bulk upload."""
+
+    request_id: uuid.UUID
+    final_status: str
+    missing_required_documents: list[str] = []
+    still_missing_required_documents: list[str] = []
+    results: list[UploadResultRead] = []
