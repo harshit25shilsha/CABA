@@ -148,14 +148,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/auth/login",
     }
 
-    async def dispatch(self, request: Request, call_next):
-
-        # Public endpoints do not require authentication
-        if (
-            request.url.path in self.PUBLIC_PATHS
-            or request.url.path.startswith("/docs/")
-            or request.url.path.startswith("/redoc/")
-        ):
+    async def dispatch(self, request: Request, call_next):     
+        if request.url.path in self.PUBLIC_PATHS or request.url.path.startswith("/docs/") or request.url.path.startswith("/redoc/"):
             return await call_next(request)
 
         authorization = request.headers.get("Authorization")
@@ -168,6 +162,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 },
             )
 
+        
         if not authorization.startswith("Bearer "):
             return JSONResponse(
                 status_code=401,
@@ -176,20 +171,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        token = authorization.split(" ", 1)[1].strip()
+        
+        token = authorization.replace("Bearer ", "", 1).strip()
 
         if not token:
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "detail": "Bearer token is required"
-                },
-            )
+            return JSONResponse(status_code=401, content={"detail": "Bearer token is required"})
 
         try:
-            # JWT verification is handled centrally by security.py
-            payload = decode_access_token(token)
+            
+            payload = jwt.decode(
+                token,
+                settings.SECRET_KEY,
+                algorithms=[settings.ALGORITHM],
+            )
 
+            
             user_id = payload.get("user_id")
             role = payload.get("role")
 
@@ -201,6 +197,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     },
                 )
 
+            
             try:
                 user_id = uuid.UUID(str(user_id))
             except ValueError:
@@ -211,25 +208,24 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     },
                 )
 
-            if not role:
-                return JSONResponse(
-                    status_code=401,
-                    content={
-                        "detail": "role is missing from token"
-                    },
-                )
-
+ 
             request.state.user_id = user_id
             request.state.role = role
             request.state.jwt_payload = payload
 
-        except Exception as exc:
-            # We will refine this exception handling in the next step
-            # so expected JWT errors are handled separately.
+        except jwt.ExpiredSignatureError:
             return JSONResponse(
                 status_code=401,
                 content={
-                    "detail": str(exc)
+                    "detail": "Token has expired"
+                },
+            )
+
+        except jwt.InvalidTokenError:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "detail": "Invalid token"
                 },
             )
 
