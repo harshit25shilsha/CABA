@@ -203,6 +203,18 @@ class OCRSettings(BaseSettings):
     USE_PADDLEOCR: bool = False  # evaluation flag per architecture doc
 
 
+class ExternalValidationSettings(BaseSettings):
+    """Settings for Java-originated, signed-URL document validation."""
+
+    model_config = SettingsConfigDict(extra="ignore")
+
+    # Empty is allowed only so a newly deployed service can expose health
+    # checks; the validation endpoint returns 503 until this is configured.
+    AI_BRAIN_SERVICE_API_KEY: str = ""
+    EXTERNAL_FILE_DOWNLOAD_TIMEOUT_SECONDS: float = 30.0
+    PROCESSING_LEASE_SECONDS: int = 300
+
+
 # Root settings — composes every group above. This is the ONLY object
 # imported elsewhere in the app.
 
@@ -217,6 +229,7 @@ class Settings(
     LLMSettings,
     VisionSettings,
     OCRSettings,
+    ExternalValidationSettings,
 ):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -232,8 +245,8 @@ class Settings(
                 raise ValueError("DEBUG must be False in production")
             if not self.CORS_ORIGINS:
                 raise ValueError("CORS_ORIGINS must be explicitly set in production")
-            if not self.CLOUDINARY_CLOUD_NAME:
-                raise ValueError("Cloudinary must be configured in production")
+            if not self.AI_BRAIN_SERVICE_API_KEY:
+                raise ValueError("AI_BRAIN_SERVICE_API_KEY must be configured in production")
         return self
 
 

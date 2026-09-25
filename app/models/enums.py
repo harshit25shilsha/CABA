@@ -42,6 +42,24 @@ class ValidationCheckStatus(str, enum.Enum):
     UNCERTAIN = "uncertain"
 
 
+class ExternalValidationStatus(str, enum.Enum):
+    """Lifecycle of one Java-originated validation job."""
+
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    DELIVERY_PENDING = "delivery_pending"
+    DELIVERY_FAILED = "delivery_failed"
+
+
+class ValidationVerdict(str, enum.Enum):
+    """Terminal result sent back to Java."""
+
+    VALID = "valid"
+    INVALID = "invalid"
+    NEEDS_REVIEW = "needs_review"
+
+
 class ReviewDecision(str, enum.Enum):
     APPROVED = "approved"
     REJECTED = "rejected"

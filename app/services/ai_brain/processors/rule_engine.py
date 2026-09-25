@@ -9,8 +9,9 @@ this generic per the architecture requirement.
 """
 
 import logging
+import re
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date as date_cls, datetime
 from typing import Any
 
 from app.core.config import settings
@@ -93,6 +94,63 @@ def check_required_fields_present(context: ProcessingContext) -> CheckResult | N
     )
 
 
+def _parse_date_value(value: Any) -> date_cls | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if not isinstance(value, str):
+        return None
+
+    text = value.strip()
+    if not text:
+        return None
+    for fmt in (
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%d-%b-%Y",
+        "%d-%B-%Y",
+        "%d %b %Y",
+        "%d %B %Y",
+        "%d-%m-%Y",
+        "%m/%d/%Y",
+        "%m-%d-%Y",
+    ):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _extract_document_date_bounds(fields: dict[str, Any]) -> tuple[date_cls | None, date_cls | None]:
+    candidates = [
+        fields.get("document_date"),
+        fields.get("statement_date"),
+        fields.get("statement_start_date"),
+        fields.get("statement_end_date"),
+        fields.get("start_date"),
+        fields.get("end_date"),
+        fields.get("statement_period"),
+    ]
+    start = None
+    end = None
+    for candidate in candidates:
+        if isinstance(candidate, str) and (" to " in candidate.lower() or " - " in candidate):
+            parts = re.split(r"\s+to\s+|\s+-\s+", candidate, maxsplit=1, flags=re.IGNORECASE)
+            if len(parts) == 2:
+                start = _parse_date_value(parts[0]) or start
+                end = _parse_date_value(parts[1]) or end
+                continue
+        parsed = _parse_date_value(candidate)
+        if parsed is not None:
+            if start is None:
+                start = parsed
+            elif end is None:
+                end = parsed
+    return start, end or start
+
+
 def check_date_within_range(context: ProcessingContext) -> CheckResult | None:
     spec = context.extra.get("normalized_spec")
     fields = context.extra.get("extracted_fields")
@@ -102,34 +160,23 @@ def check_date_within_range(context: ProcessingContext) -> CheckResult | None:
     if not date_range:
         return None
 
-    doc_date_str = fields.get("document_date") or fields.get("statement_date")
-    if not doc_date_str:
+    document_start, document_end = _extract_document_date_bounds(fields)
+    if document_start is None or document_end is None:
         return _check(
             "date_within_range",
             ValidationCheckStatus.UNCERTAIN,
             expected=date_range,
-            detail="No date field found in extracted data",
+            detail="No recognizable document date or date range found in extracted data",
         )
 
-    try:
-        doc_date = datetime.fromisoformat(doc_date_str).date()
-        start = datetime.fromisoformat(date_range["start"]).date() if date_range.get("start") else None
-        end = datetime.fromisoformat(date_range["end"]).date() if date_range.get("end") else None
-    except (ValueError, TypeError) as exc:
-        return _check(
-            "date_within_range",
-            ValidationCheckStatus.UNCERTAIN,
-            expected=date_range,
-            actual=doc_date_str,
-            detail=f"Unparseable date: {exc}",
-        )
-
-    in_range = (start is None or doc_date >= start) and (end is None or doc_date <= end)
+    start = _parse_date_value(date_range.get("start"))
+    end = _parse_date_value(date_range.get("end"))
+    in_range = (start is None or document_start >= start) and (end is None or document_end <= end)
     return _check(
         "date_within_range",
         ValidationCheckStatus.PASS if in_range else ValidationCheckStatus.FAIL,
         expected=date_range,
-        actual=doc_date.isoformat(),
+        actual={"start": document_start.isoformat(), "end": document_end.isoformat()},
     )
 
 

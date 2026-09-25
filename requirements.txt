@@ -30,10 +30,6 @@ openai==1.58.1     # OpenAI-compatible client — used for the vision provider (
 # --- Storage ----------------------------------------------------------------------
 cloudinary==1.41.0
 
-# --- Auth / security ---------------------------------------------------------------
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-multipart==0.0.20   # required for file upload endpoints
 
 # --- Utilities ----------------------------------------------------------------------
 httpx==0.28.1
