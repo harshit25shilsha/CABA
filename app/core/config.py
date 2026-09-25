@@ -104,6 +104,7 @@ class CelerySettings(BaseSettings):
     CELERY_TASK_ALWAYS_EAGER: bool = False  # True only in tests
     CELERY_TASK_TIME_LIMIT: int = 300  # hard kill after 5 min
     CELERY_TASK_SOFT_TIME_LIMIT: int = 240
+    VALIDATION_TASK_RATE_LIMIT: str = "10/m"
 
 
 class SecuritySettings(BaseSettings):
@@ -169,6 +170,7 @@ class LLMSettings(BaseSettings):
     GROQ_TIMEOUT_SECONDS: int
     GROQ_MAX_RETRIES: int
     LLM_TEMPERATURE: float # low temp — deterministic-leaning extraction
+    GROQ_REQUESTS_PER_MINUTE: int = 30
 
 
 class VisionSettings(BaseSettings):
@@ -193,6 +195,7 @@ class VisionSettings(BaseSettings):
     VISION_BASE_URL: str
     VISION_TIMEOUT_SECONDS: int # vision calls run slower than text-only
     VISION_MAX_RETRIES: int
+    VISION_REQUESTS_PER_MINUTE: int = 10
     
 
 class OCRSettings(BaseSettings):
@@ -213,6 +216,10 @@ class ExternalValidationSettings(BaseSettings):
     AI_BRAIN_SERVICE_API_KEY: str = ""
     EXTERNAL_FILE_DOWNLOAD_TIMEOUT_SECONDS: float = 30.0
     PROCESSING_LEASE_SECONDS: int = 300
+
+    # java/ CABA webhook configuration 
+    CABA_VERDICT_WEBHOOK_URL: str = ""
+    CABA_WEBHOOK_SECRET: str = ""
 
 
 # Root settings — composes every group above. This is the ONLY object

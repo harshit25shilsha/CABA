@@ -41,8 +41,10 @@ def _new_task_session_factory() -> tuple[async_sessionmaker[AsyncSession], objec
     engine = create_async_engine(
         settings.SQLALCHEMY_DATABASE_URI,
         echo=settings.DB_ECHO,
-        pool_size=settings.DB_POOL_SIZE,
-        max_overflow=settings.DB_MAX_OVERFLOW,
+        # pool_size=settings.DB_POOL_SIZE,
+        # max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_size=1,
+        max_overflow=0,
         pool_timeout=settings.DB_POOL_TIMEOUT,
         pool_recycle=settings.DB_POOL_RECYCLE,
         pool_pre_ping=True,
