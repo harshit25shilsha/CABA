@@ -60,6 +60,7 @@ async def process_external_validation(
                 {
                     "name": "document_extraction",
                     "status": ValidationCheckStatus.UNCERTAIN.value,
+                    "passed": False,
                     "detail": extraction_result.error,
                 }
             ],
@@ -131,6 +132,7 @@ async def process_external_validation(
             {
                 "name": "semantic_validation",
                 "status": semantic_status,
+                "passed": semantic_status == ValidationCheckStatus.PASS.value,
                 "confidence": semantic_confidence,
                 "detail": semantic_output.get("reasoning"),
             }
@@ -140,6 +142,7 @@ async def process_external_validation(
             {
                 "name": "requirement_interpretation",
                 "status": ValidationCheckStatus.UNCERTAIN.value,
+                "passed": False,
                 "detail": requirement_result.error,
             }
         )
@@ -182,9 +185,11 @@ def _combine_verdict(
 
 
 def _webhook_check(check: dict) -> dict:
+    status = str(check.get("status") or "").lower()
     return {
         "name": check["check_name"],
-        "status": check["status"],
+        "status": check.get("status"),
+        "passed": status == ValidationCheckStatus.PASS.value,
         "expected_value": check.get("expected_value"),
         "actual_value": check.get("actual_value"),
         "detail": check.get("detail"),

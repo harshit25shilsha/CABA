@@ -22,14 +22,6 @@ class Environment(str, Enum):
     STAGING = "staging"
     PRODUCTION = "production"
 
-
-# --------------------------------------------------------------------------
-# Grouped settings — keeps config.py navigable as the project grows.
-# Each group is its own BaseSettings so it can be unit-tested independently,
-# but they all share the same .env file via the parent Settings class.
-# --------------------------------------------------------------------------
-
-
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
@@ -54,16 +46,16 @@ class DatabaseSettings(BaseSettings):
 
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
-    POSTGRES_HOST: str = "localhost"
-    POSTGRES_PORT: int = 5432
+    POSTGRES_HOST: str
+    POSTGRES_PORT: int
     POSTGRES_DB: str
 
     # Pool tuning — production values; override in .env for local dev if needed
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
-    DB_POOL_TIMEOUT: int = 30
-    DB_POOL_RECYCLE: int = 1800  # seconds; avoids stale connections
-    DB_ECHO: bool = False
+    DB_POOL_SIZE: int
+    DB_MAX_OVERFLOW: int
+    DB_POOL_TIMEOUT: int
+    DB_POOL_RECYCLE: int        # seconds; avoids stale connections
+    DB_ECHO: bool
 
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:
@@ -84,9 +76,9 @@ class DatabaseSettings(BaseSettings):
 class RedisSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
+    REDIS_HOST: str
+    REDIS_PORT: int
+    REDIS_DB: int
     REDIS_PASSWORD: Optional[str] = None
 
     @property
@@ -99,20 +91,20 @@ class CelerySettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
     # Separate DB index from cache/session Redis to avoid key collisions
-    CELERY_BROKER_DB: int = 1
-    CELERY_RESULT_BACKEND_DB: int = 2
-    CELERY_TASK_ALWAYS_EAGER: bool = False  # True only in tests
-    CELERY_TASK_TIME_LIMIT: int = 300  # hard kill after 5 min
-    CELERY_TASK_SOFT_TIME_LIMIT: int = 240
+    CELERY_BROKER_DB: int
+    CELERY_RESULT_BACKEND_DB: int
+    CELERY_TASK_ALWAYS_EAGER: bool       # True only in tests
+    CELERY_TASK_TIME_LIMIT: int          # hard kill after 5 min
+    CELERY_TASK_SOFT_TIME_LIMIT: int
 
 
 class SecuritySettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
-    SECRET_KEY: str  # required, no default — force it to come from .env
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    SECRET_KEY: str         # required, no default — force it to come from .env
+    ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
+    REFRESH_TOKEN_EXPIRE_DAYS: int
 
     @field_validator("SECRET_KEY")
     @classmethod
@@ -137,14 +129,14 @@ class StorageSettings(BaseSettings):
     CLOUDINARY_API_KEY: Optional[str] = None
     CLOUDINARY_API_SECRET: Optional[str] = None
 
-    CLOUDINARY_TEMP_FOLDER: str = "caba/temp"
-    CLOUDINARY_QUARANTINE_FOLDER: str = "caba/quarantine"
-    CLOUDINARY_REVIEW_FOLDER: str = "caba/review"
-    CLOUDINARY_PERMANENT_FOLDER: str = "caba/permanent"
+    CLOUDINARY_TEMP_FOLDER: str
+    CLOUDINARY_QUARANTINE_FOLDER: str
+    CLOUDINARY_REVIEW_FOLDER: str
+    CLOUDINARY_PERMANENT_FOLDER: str
 
     LOCAL_SCRATCH_PATH: str = "./storage/scratch"
 
-    MAX_UPLOAD_SIZE_MB: int = 15
+    MAX_UPLOAD_SIZE_MB: int
     ALLOWED_MIME_TYPES_RAW: str = Field(
         default=(
             "application/pdf,"
@@ -168,7 +160,7 @@ class LLMSettings(BaseSettings):
     GROQ_MODEL: str
     GROQ_TIMEOUT_SECONDS: int
     GROQ_MAX_RETRIES: int
-    LLM_TEMPERATURE: float # low temp — deterministic-leaning extraction
+    LLM_TEMPERATURE: float          # low temp — deterministic-leaning extraction
 
 
 class VisionSettings(BaseSettings):
@@ -191,16 +183,16 @@ class VisionSettings(BaseSettings):
     VISION_API_KEY: str = ""
     VISION_MODEL: str
     VISION_BASE_URL: str
-    VISION_TIMEOUT_SECONDS: int # vision calls run slower than text-only
+    VISION_TIMEOUT_SECONDS: int             # vision calls run slower than text-only
     VISION_MAX_RETRIES: int
     
 
 class OCRSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
-    TESSERACT_CMD: Optional[str] = None  # override if not on PATH (esp. Windows)
+    TESSERACT_CMD: Optional[str] = None         # override if not on PATH (esp. Windows)
     OCR_LANGUAGE: str = "eng"
-    USE_PADDLEOCR: bool = False  # evaluation flag per architecture doc
+    USE_PADDLEOCR: bool = False                  # evaluation flag per architecture doc
 
 
 class ExternalValidationSettings(BaseSettings):
@@ -211,8 +203,11 @@ class ExternalValidationSettings(BaseSettings):
     # Empty is allowed only so a newly deployed service can expose health
     # checks; the validation endpoint returns 503 until this is configured.
     AI_BRAIN_SERVICE_API_KEY: str = ""
-    EXTERNAL_FILE_DOWNLOAD_TIMEOUT_SECONDS: float = 30.0
-    PROCESSING_LEASE_SECONDS: int = 300
+    CABA_WEBHOOK_URL: str = ""
+    CABA_WEBHOOK_HMAC_SECRET: str = ""
+    EXTERNAL_FILE_DOWNLOAD_TIMEOUT_SECONDS: float
+    JAVA_WEBHOOK_TIMEOUT_SECONDS: float
+    PROCESSING_LEASE_SECONDS: int
 
 
 # Root settings — composes every group above. This is the ONLY object
@@ -247,6 +242,8 @@ class Settings(
                 raise ValueError("CORS_ORIGINS must be explicitly set in production")
             if not self.AI_BRAIN_SERVICE_API_KEY:
                 raise ValueError("AI_BRAIN_SERVICE_API_KEY must be configured in production")
+            if not self.CABA_WEBHOOK_URL or not self.CABA_WEBHOOK_HMAC_SECRET:
+                raise ValueError("Java webhook URL and HMAC secret must be configured in production")
         return self
 
 

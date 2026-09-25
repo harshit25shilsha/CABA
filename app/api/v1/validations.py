@@ -52,7 +52,8 @@ async def create_external_validation(
 
     if existing is not None:
         await db.commit()
-        return ExternalValidationAccepted(upload_id=existing.upload_id)
+        status_value = existing.status.value.upper() if isinstance(existing.status, ExternalValidationStatus) else str(existing.status).upper()
+        return ExternalValidationAccepted(upload_id=existing.upload_id, status=status_value)
 
     job = ExternalValidationJob(
         upload_id=f"aib_{uuid.uuid4().hex}",
@@ -71,7 +72,7 @@ async def create_external_validation(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Unable to queue validation") from exc
 
     await _enqueue_or_report_failure(job, db)
-    return ExternalValidationAccepted(upload_id=job.upload_id)
+    return ExternalValidationAccepted(upload_id=job.upload_id, status=job.status.value.upper())
 
 
 async def _enqueue_or_report_failure(job: ExternalValidationJob, db: AsyncSession) -> None:
